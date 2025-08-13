@@ -1,0 +1,6 @@
+streamlit
+plotly
+pandas>=1.5,<2.0
+numpy>=1.23,<2.0
+pandas-ta==0.3.14b0
+tvdatafeed @ git+https://github.com/rongardF/tvdatafeed.git@e6f6aaa7de439ac6e454d9b26d2760ded8dc4923
