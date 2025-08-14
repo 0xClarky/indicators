@@ -213,3 +213,56 @@ def calculate_eth_breadth_wave(data_dict, benchmark_df, lookback_period=30):
     percentage_df = breadth_wave_df.div(total_assets_per_day, axis=0) * 100
     
     return percentage_df.dropna()
+
+def calculate_altcoin_season_index(majors_data, benchmark_df, btcd_df, lookback_period=90, vol_ma_period=20, normalization_window=365, smoothing_period=14):
+    """
+    Calculates a comprehensive Altcoin Season Index on a 0-100 scale, using Z-scores
+    for normalization and a sigmoid function to create the final bounded index.
+    All sub-calculations are performed internally.
+    """
+    # --- Internal Calculation for Price Breadth ---
+    outperforming_assets = []
+    for symbol, df in majors_data.items():
+        if 'BTC' in symbol:
+            continue
+        temp_df = pd.concat([df['close'].rename('asset'), benchmark_df['close'].rename('benchmark')], axis=1)
+        roc_df = temp_df.pct_change(periods=lookback_period)
+        is_outperforming = (roc_df['asset'] > roc_df['benchmark']).rename(symbol)
+        outperforming_assets.append(is_outperforming)
+    price_breadth = (pd.concat(outperforming_assets, axis=1).sum(axis=1) / len(outperforming_assets)) * 100
+
+    # --- Internal Calculation for Volume Breadth ---
+    outperformance_volumes = []
+    for symbol, df in majors_data.items():
+        if 'BTC' in symbol:
+            continue
+        temp_df = pd.concat([
+            df['close'].rename('asset_close'), df['volume'].rename('asset_volume'),
+            benchmark_df['close'].rename('benchmark_close')
+        ], axis=1).dropna()
+        asset_roc = temp_df['asset_close'].pct_change(periods=lookback_period)
+        benchmark_roc = temp_df['benchmark_close'].pct_change(periods=lookback_period)
+        asset_vol_ma = temp_df['asset_volume'].rolling(window=vol_ma_period).mean()
+        volume_if_outperforming = np.where(asset_roc > benchmark_roc, asset_vol_ma, 0)
+        outperformance_volumes.append(pd.Series(volume_if_outperforming, index=temp_df.index).rename(symbol))
+    volume_breadth = pd.concat(outperformance_volumes, axis=1).sum(axis=1)
+
+    # --- Component 3: BTC Dominance Momentum ---
+    btcd_momentum = btcd_df['close'].pct_change(periods=lookback_period) * 100
+
+    # --- Combine and Align All Raw Components ---
+    combined_df = pd.concat([price_breadth, volume_breadth, btcd_momentum], axis=1).dropna()
+    combined_df.columns = ['price_breadth', 'volume_breadth', 'btcd_momentum']
+
+    # --- Normalization and Final Index Calculation ---
+    combined_df['price_zscore'] = (combined_df['price_breadth'] - combined_df['price_breadth'].rolling(window=normalization_window).mean()) / combined_df['price_breadth'].rolling(window=normalization_window).std()
+    combined_df['volume_zscore'] = (combined_df['volume_breadth'] - combined_df['volume_breadth'].rolling(window=normalization_window).mean()) / combined_df['volume_breadth'].rolling(window=normalization_window).std()
+    combined_df['btcd_zscore'] = -((combined_df['btcd_momentum'] - combined_df['btcd_momentum'].rolling(window=normalization_window).mean()) / combined_df['btcd_momentum'].rolling(window=normalization_window).std())
+
+    combined_df['final_zscore'] = (combined_df['price_zscore'] * 0.5) + (combined_df['volume_zscore'] * 0.25) + (combined_df['btcd_zscore'] * 0.25)
+    
+    final_index = 100 / (1 + np.exp(-combined_df['final_zscore']))
+    
+    smoothed_index = final_index.rolling(window=smoothing_period).mean()
+
+    return pd.DataFrame({'altcoin_season_index': smoothed_index}).dropna()
