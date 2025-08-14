@@ -2,24 +2,35 @@ import streamlit as st
 import plotly.graph_objects as go
 from utils import load_data
 from indicators import calculate_distance_from_ma
-from config import ALL_SYMBOLS
+from config import (
+    MAJORS_LARGE_CAP, MAJORS_MID_CAP,
+    MAJORS_SMALL_CAP, MAJORS_MICRO_CAP, MEME_COIN_BASKET
+)
+import pandas as pd
 
 # --- Page Configuration ---
 st.set_page_config(page_title="MA Distance Map", layout="wide")
 st.title("📊 MA Distance Map")
 
 # --- UI Controls ---
-ma_period = st.radio(
-    "Select Moving Average Period:",
-    (50, 200),
-    index=1,  # Default to the 200D MA
-    horizontal=True,
-    key="ma_dist_toggle"
-)
+col1, col2 = st.columns(2)
+with col1:
+    ma_period = st.radio("Select Moving Average Period:", (50, 200), index=1, horizontal=True)
+
+with col2:
+    asset_baskets = {
+        "Everything (All Baskets)": {**MAJORS_LARGE_CAP, **MAJORS_MID_CAP, **MAJORS_SMALL_CAP, **MAJORS_MICRO_CAP, **MEME_COIN_BASKET},
+        "Large Caps (>$1B)": MAJORS_LARGE_CAP,
+        "Mid Caps (>$500M)": MAJORS_MID_CAP,
+        "Small Caps (>$100M)": MAJORS_SMALL_CAP,
+        "Micro Caps (>$50M)": MAJORS_MICRO_CAP,
+        "Meme Coins": MEME_COIN_BASKET
+    }
+    selected_basket_name = st.selectbox("Select an Asset Basket:", options=list(asset_baskets.keys()), index=0)
+    selected_basket = asset_baskets[selected_basket_name]
 
 # --- Data Loading ---
-# Correctly import 'load_data' and use the dictionary values for table names
-asset_data = load_data(asset_list=list(ALL_SYMBOLS.values()))
+asset_data = load_data(asset_list=list(selected_basket.values()))
 
 if asset_data is None:
     st.warning("Could not load asset data. Please ensure the data updater has been run.")
@@ -29,40 +40,21 @@ if asset_data is None:
 distance_series = calculate_distance_from_ma(asset_data, ma_length=ma_period)
 
 # --- Charting ---
-custom_colorscale = [
-    [0.0, 'rgb(200, 0, 0)'],      # Strong red for negative
-    [0.5, 'rgb(80, 80, 80)'],     # Dark gray for neutral
-    [1.0, 'rgb(0, 200, 0)']       # Strong green for positive
-]
-
+custom_colorscale = [[0.0, 'rgb(200, 0, 0)'], [0.5, 'rgb(80, 80, 80)'], [1.0, 'rgb(0, 200, 0)']]
 fig = go.Figure()
 
 fig.add_trace(go.Scatter(
-    x=distance_series.index,
-    y=distance_series.values,
-    mode='markers',
-    marker=dict(
-        size=12,
-        color=distance_series.values,
-        colorscale=custom_colorscale,
-        cmin=-50,
-        cmax=50,
-        showscale=True,
-        colorbar=dict(title=f"% from {ma_period}D MA")
-    ),
-    text=[f"{val:.2f}%" for val in distance_series.values],
-    hoverinfo='x+text'
+    x=distance_series.index, y=distance_series.values, mode='markers',
+    marker=dict(size=12, color=distance_series.values, colorscale=custom_colorscale, cmin=-50, cmax=50,
+                showscale=True, colorbar=dict(title=f"% from {ma_period}D MA")),
+    text=[f"{val:.2f}%" for val in distance_series.values], hoverinfo='x+text'
 ))
 
 fig.add_hline(y=0, line_dash="dash", line_color="gray")
 
-fig.update_layout(
-    title=f"Percentage Distance from {ma_period}-Day Moving Average",
-    height=700,
-    xaxis_title="Assets",
-    yaxis_title=f"Distance from {ma_period}D MA (%)",
-    plot_bgcolor='rgba(17, 17, 17, 1)'
-)
+fig.update_layout(title=f"Percentage Distance from {ma_period}D MA for {selected_basket_name}",
+                  height=700, xaxis_title="Assets", yaxis_title=f"Distance from {ma_period}D MA (%)",
+                  plot_bgcolor='rgba(17, 17, 17, 1)')
 
 st.plotly_chart(fig, use_container_width=True)
 

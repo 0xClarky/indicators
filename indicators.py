@@ -19,16 +19,17 @@ def calculate_stablecoin_vs_total_roc(total_df, usdt_d_df, usdc_d_df, roc_len=30
     return df[['roc_total', 'roc_stable_inv']].dropna()
 
 
-def calculate_altcoin_season_index(total3_df, btcd_df, ma_length=30):
+def calculate_altcoin_season_index_v1(total3_df, btcd_df, ma_length=30):
     """
-    Calculates the Altcoin Season Index (ASI).
+    Calculates the original Altcoin Season Index (ASI) based on the momentum
+    spread between TOTAL3 and BTC.D.
     """
     df = pd.concat([
         total3_df['close'].rename('total3'),
         btcd_df['close'].rename('btcd')
     ], axis=1).dropna()
-    total3_roc = (df['total3'] - df['total3'].shift(1)) / df['total3'].shift(1) * 100
-    btcd_roc = (df['btcd'] - df['btcd'].shift(1)) / df['btcd'].shift(1) * 100
+    total3_roc = df['total3'].pct_change(1) * 100
+    btcd_roc = df['btcd'].pct_change(1) * 100
     df['asi_value'] = total3_roc - btcd_roc
     df['signal_line'] = df['asi_value'].rolling(window=ma_length).mean()
     return df[['asi_value', 'signal_line']].dropna()
@@ -214,11 +215,10 @@ def calculate_eth_breadth_wave(data_dict, benchmark_df, lookback_period=30):
     
     return percentage_df.dropna()
 
-def calculate_altcoin_season_index(majors_data, benchmark_df, btcd_df, lookback_period=90, vol_ma_period=20, normalization_window=365, smoothing_period=14):
+def calculate_official_altcoin_season_index(majors_data, benchmark_df, btcd_df, lookback_period=90, vol_ma_period=20, normalization_window=365, smoothing_period=14):
     """
-    Calculates a comprehensive Altcoin Season Index on a 0-100 scale, using Z-scores
-    for normalization and a sigmoid function to create the final bounded index.
-    All sub-calculations are performed internally.
+    Calculates the comprehensive "Official" Altcoin Season Index on a 0-100 scale,
+    using the Z-score methodology with a 50/25/25 weighting.
     """
     # --- Internal Calculation for Price Breadth ---
     outperforming_assets = []
@@ -254,15 +254,16 @@ def calculate_altcoin_season_index(majors_data, benchmark_df, btcd_df, lookback_
     combined_df = pd.concat([price_breadth, volume_breadth, btcd_momentum], axis=1).dropna()
     combined_df.columns = ['price_breadth', 'volume_breadth', 'btcd_momentum']
 
-    # --- Normalization and Final Index Calculation ---
+    # --- Normalization using Z-scores ---
     combined_df['price_zscore'] = (combined_df['price_breadth'] - combined_df['price_breadth'].rolling(window=normalization_window).mean()) / combined_df['price_breadth'].rolling(window=normalization_window).std()
     combined_df['volume_zscore'] = (combined_df['volume_breadth'] - combined_df['volume_breadth'].rolling(window=normalization_window).mean()) / combined_df['volume_breadth'].rolling(window=normalization_window).std()
     combined_df['btcd_zscore'] = -((combined_df['btcd_momentum'] - combined_df['btcd_momentum'].rolling(window=normalization_window).mean()) / combined_df['btcd_momentum'].rolling(window=normalization_window).std())
 
-    combined_df['final_zscore'] = (combined_df['price_zscore'] * 0.5) + (combined_df['volume_zscore'] * 0.25) + (combined_df['btcd_zscore'] * 0.25)
+    # --- Combine Z-scores with 50/25/25 weights ---
+    combined_df['final_zscore'] = (combined_df['price_zscore'] * 0.50) + (combined_df['volume_zscore'] * 0.25) + (combined_df['btcd_zscore'] * 0.25)
     
+    # --- Convert to 0-100 scale and smooth ---
     final_index = 100 / (1 + np.exp(-combined_df['final_zscore']))
-    
     smoothed_index = final_index.rolling(window=smoothing_period).mean()
 
     return pd.DataFrame({'altcoin_season_index': smoothed_index}).dropna()
