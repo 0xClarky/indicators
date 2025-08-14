@@ -34,18 +34,6 @@ def calculate_altcoin_season_index(total3_df, btcd_df, ma_length=30):
     return df[['asi_value', 'signal_line']].dropna()
 
 
-def calculate_volatility_index(total_df, atr_len=14, ma_len=30):
-    """
-    Calculates an implied volatility index for the total crypto market.
-    """
-    df = total_df.copy()
-    df.ta.atr(length=atr_len, append=True)
-    atr_col_name = f'ATRr_{atr_len}'
-    df['volatility_index'] = (df[atr_col_name] / df['close']) * 100
-    df['vol_ma'] = df['volatility_index'].rolling(window=ma_len).mean()
-    return df[['volatility_index', 'vol_ma']].dropna()
-
-
 def calculate_traffic_light(total_df, len_fast=21, len_medium=50, len_slow=200):
     """
     Determines the macro trend regime based on the alignment of key moving averages.
@@ -149,39 +137,6 @@ def calculate_market_character(data_dict, lookback_period=30):
                 })
                 
     return pd.DataFrame(market_character_data).set_index('symbol')
-
-def calculate_relative_strength(data_dict, benchmark_df, lookback_period=30):
-    """
-    Calculates the relative strength of each asset in a dictionary against a
-    benchmark asset (e.g., Bitcoin) over a given lookback period.
-
-    Args:
-        data_dict (dict): A dictionary of asset DataFrames.
-        benchmark_df (pd.DataFrame): The DataFrame for the benchmark asset (BTCUSD).
-        lookback_period (int): The lookback period in days for the ROC calculation.
-
-    Returns:
-        pd.Series: A Series with asset names as the index and their relative
-                   strength (% outperformance vs. benchmark) as values, sorted.
-    """
-    # Calculate the benchmark's performance
-    benchmark_roc = (benchmark_df['close'].iloc[-1] - benchmark_df['close'].iloc[-1 - lookback_period]) / benchmark_df['close'].iloc[-1 - lookback_period] * 100
-    
-    relative_strengths = {}
-    
-    for symbol, df in data_dict.items():
-        if len(df) > lookback_period:
-            # Calculate the asset's performance
-            asset_roc = (df['close'].iloc[-1] - df['close'].iloc[-1 - lookback_period]) / df['close'].iloc[-1 - lookback_period] * 100
-            
-            # Calculate the relative strength by subtracting the benchmark's performance
-            rs = asset_roc - benchmark_roc
-            
-            if pd.notna(rs):
-                relative_strengths[symbol] = rs
-                
-    # Convert to a Series and sort from strongest to weakest
-    return pd.Series(relative_strengths).sort_values(ascending=False)
 
 def calculate_regime_scatter_data(ad_data_dict, total_df, lookback_period=30):
     """
